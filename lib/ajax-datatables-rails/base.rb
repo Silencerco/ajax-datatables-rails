@@ -102,11 +102,26 @@ module AjaxDatatablesRails
       criteria
     end
 
-    def search_condition(column, value)
-      model, column = column.split('.')
-      model = model.singularize.titleize.gsub('/', '::').gsub( / /, '' ).constantize
+    # Allow searchable columns to be passed in as an array of models.
+    # Format: [model, model, model.field]
+    # This allows searching on nested models/tables where active record aliases table names
+    # Examples:
+    # Model1.joins(:employees, {:model2 => :employees})
+    # @searchable_columns << ['model2', 'employee.first_name']
+    def search_condition(columns, value)
+      if columns.is_a?(Array)
+        models = columns.map {|c| c.split('.').first}
+        column_name = columns.find {|c| c =~ /\./}.split('.').last
+        models.sort! # assume that the tables in the active record auto-generated table alias are combined alphabetically
+        table_alias = models.map {|m| m.downcase.pluralize.gsub(/\W+/, '_')}.join('_')
+        primary_table = models[0].singularize.titleize.gsub(/\W+/, '_').constantize
+        table = primary_table.arel_table.alias table_alias
+      else
+        model, column_name = columns.split('.')
+        table = model.singularize.titleize.gsub('/', '::').gsub( / /, '' ).constantize.arel_table
+      end
 
-      casted_column = ::Arel::Nodes::NamedFunction.new('CAST', [model.arel_table[column.to_sym].as(typecast)])
+      casted_column = ::Arel::Nodes::NamedFunction.new('CAST', [table[column_name.to_sym].as(typecast)])
       casted_column.matches("%#{value}%")
     end
 
